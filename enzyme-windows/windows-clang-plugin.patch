@@ -1,3 +1,20 @@
+diff --git a/.gitattributes b/.gitattributes
+index a61aae9..c11432d 100644
+--- a/.gitattributes
++++ b/.gitattributes
+@@ -15,3 +15,12 @@
+ /polly export-ignore
+ /tests export-ignore
+ /enzyme/benchmarks export-ignore
++
++# Keep native Windows plugin sources and build inputs stable across checkouts.
++/.gitattributes text eol=lf
++/enzyme/CMakeLists.txt text eol=lf
++/enzyme/Enzyme/*.cpp text eol=lf
++/enzyme/Enzyme/*.h text eol=lf
++/enzyme/Enzyme/Clang/*.cpp text eol=lf
++/enzyme/include/enzyme/* text eol=lf
++/enzyme/scripts/*.cmake text eol=lf
 diff --git a/enzyme/CMakeLists.txt b/enzyme/CMakeLists.txt
 index ba54796..cd85940 100644
 --- a/enzyme/CMakeLists.txt
@@ -300,9 +317,10 @@ index 7005d74..d0fa874 100644
  Return __enzyme_autodiff(T...);
 diff --git a/enzyme/scripts/bundle-includes.cmake b/enzyme/scripts/bundle-includes.cmake
 new file mode 100644
+index 0000000..bbd765b
 --- /dev/null
 +++ b/enzyme/scripts/bundle-includes.cmake
-@@ -0,0 +1,23 @@
+@@ -0,0 +1,26 @@
 +# Bundle virtual Enzyme headers without a POSIX shell (also usable on Windows).
 +if(NOT DEFINED INPUT_ROOT OR NOT DEFINED OUTPUT_FILE)
 +  message(FATAL_ERROR "INPUT_ROOT and OUTPUT_FILE are required")
@@ -325,4 +343,7 @@ new file mode 100644
 +file(WRITE "${OUTPUT_FILE}.tmp" "${bundled}")
 +execute_process(COMMAND "${CMAKE_COMMAND}" -E copy_if_different
 +                "${OUTPUT_FILE}.tmp" "${OUTPUT_FILE}"
-+                COMMAND_ERROR_IS_FATAL ANY)
++                RESULT_VARIABLE copy_result)
++if(NOT copy_result STREQUAL "0")
++  message(FATAL_ERROR "Copying bundled headers failed: ${copy_result}")
++endif()

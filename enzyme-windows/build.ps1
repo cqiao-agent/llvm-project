@@ -10,8 +10,10 @@ if ($LASTEXITCODE -ne 0 -or $baseCommit -ne 'cd708029e0b2869e80abe31ddb175f7c353
     throw 'The official llvmorg-19.1.7 tag is required in this checkout.'
 }
 $enzymeCommit = & $git -c "safe.directory=$($enzymeSource.Replace('\','/'))" -C $enzymeSource rev-parse HEAD
-if ($LASTEXITCODE -ne 0 -or $enzymeCommit -ne 'cdfaa22a4c3ceee3c19ba7c213ed039a278fe255') {
-    throw 'Enzyme must be checked out at cdfaa22a4c3ceee3c19ba7c213ed039a278fe255.'
+$enzymeBaseCommit = 'cdfaa22a4c3ceee3c19ba7c213ed039a278fe255'
+$enzymeForkCommit = '7b72c29b7c28d113c20c216ddb13592ce5c761fc'
+if ($LASTEXITCODE -ne 0 -or $enzymeCommit -notin @($enzymeBaseCommit, $enzymeForkCommit)) {
+    throw "Enzyme must use the tested fork commit $enzymeForkCommit or upstream base $enzymeBaseCommit with the compatibility patch."
 }
 $patch = Join-Path $PSScriptRoot 'windows-clang-plugin.patch'
 & $git -c "safe.directory=$($enzymeSource.Replace('\','/'))" -c core.autocrlf=true -c core.safecrlf=false -C $enzymeSource apply --reverse --check $patch 2>$null

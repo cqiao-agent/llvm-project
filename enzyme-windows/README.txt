@@ -25,11 +25,14 @@ BUILD (PowerShell, in llvm-project)
   & .\enzyme-windows\validate.ps1
   & ..\warp_newton_env\python.exe .\enzyme-windows\record_build.py
 
-  Existing Enzyme source must be at commit
-  cdfaa22a4c3ceee3c19ba7c213ed039a278fe255. build.ps1 checks and applies the tracked
-  windows-clang-plugin.patch when necessary. Conflicting local changes fail the
-  build instead of being overwritten. Enzyme is kept as a sibling Git checkout;
-  its Windows changes are preserved by the versioned patch in this repository.
+  Enzyme is a sibling Git checkout from https://github.com/cqiao-agent/Enzyme.git,
+  branch agent_windows_clang19, tested commit
+  7b72c29b7c28d113c20c216ddb13592ce5c761fc. Its Windows changes are committed there.
+  The upstream base cdfaa22a4c3ceee3c19ba7c213ed039a278fe255 is also accepted:
+  build.ps1 checks and applies windows-clang-plugin.patch when necessary.
+  Conflicting local changes fail the build instead of being overwritten.
+  This tracked patch reproduces all changes from the upstream base to the tested
+  fork commit, including the scoped .gitattributes LF rules.
 
   Toolchain used: VS 2022 Community, MSVC 14.29, SDK 10.0.19041.0,
   Clang-cl 19.1.5 bootstrap, bundled CMake/Ninja, Python 3.12.
@@ -62,6 +65,8 @@ WINDOWS COMPATIBILITY
   The Enzyme patch preserves MSVC access-level name mangling, uses Clang's
   -fno-access-control, bundles headers with CMake, fixes Windows virtual header
   paths, gives activity markers C linkage and qualifies llvm::ConstantExpr.
+  The affected source/build inputs use text eol=lf in Enzyme's .gitattributes;
+  this overrides core.autocrlf for those files without changing global settings.
 
 VALIDATION
   validate.ps1 runs 77 numerical checks and verifies the differentiated IR:
