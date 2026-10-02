@@ -1,0 +1,328 @@
+diff --git a/enzyme/CMakeLists.txt b/enzyme/CMakeLists.txt
+index ba54796..cd85940 100644
+--- a/enzyme/CMakeLists.txt
++++ b/enzyme/CMakeLists.txt
+@@ -33,6 +33,16 @@ endif()
+ set(CMAKE_CXX_STANDARD 17)
+ set(CMAKE_CXX_STANDARD_REQUIRED ON)
+ 
++# MSVC mangles member access into symbol names. Keep LLVM's access specifiers
++# intact and permit Enzyme's internal LLVM access with Clang's compiler flag.
++if(WIN32 AND CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC")
++  if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
++    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/clang:-fno-access-control>)
++  else()
++    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fno-access-control>)
++  endif()
++endif()
++
+ option(ENZYME_ENABLE_PLUGINS "Enable Clang/LLD/Opt plugins" ON)
+ option(ENZYME_ENABLE_BENCHMARKS "Enable benchmarks" OFF)
+ option(ENZYME_BC_LOADER "Enable bitcode loader" ON)
+@@ -251,6 +261,10 @@ message("found MLIR ${MLIR_FOUND}")
+ # include(AddClang)
+ 
+ add_definitions(${LLVM_DEFINITIONS})
++if(WIN32 AND ENZYME_WINDOWS_LLVM_INCLUDE_DIR)
++  list(PREPEND LLVM_INCLUDE_DIRS "${ENZYME_WINDOWS_LLVM_INCLUDE_DIR}")
++  add_definitions(-DENZYME_WINDOWS_LLVM_DATA_IMPORTS)
++endif()
+ include_directories(${LLVM_INCLUDE_DIRS})
+ message("LLVM_INSTALL_PREFIX: ${LLVM_INSTALL_PREFIX}")
+ message("LLVM_INCLUDE_DIRS: ${LLVM_INCLUDE_DIRS}")
+@@ -286,13 +300,17 @@ list(GET LLVM_INCLUDE_DIRS 0 LLVM_IDIR)
+ message("first llvm include directory" ${LLVM_IDIR})
+ 
+ file(READ ${LLVM_IDIR}/llvm/Analysis/ScalarEvolution.h INPUT_TEXT)
+-string(REPLACE private public INPUT_TEXT "${INPUT_TEXT}")
++if(NOT (WIN32 AND CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC"))
++  string(REPLACE private public INPUT_TEXT "${INPUT_TEXT}")
++endif()
+ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/include/SCEV/ScalarEvolution.h"
+      "${INPUT_TEXT}")
+ 
+ file(READ ${LLVM_IDIR}/llvm/Analysis/TargetLibraryInfo.h INPUT_TEXT)
+-string(REPLACE "class TargetLibraryInfo {" "class TargetLibraryInfo {public:"
+-       INPUT_TEXT "${INPUT_TEXT}")
++if(NOT (WIN32 AND CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC"))
++  string(REPLACE "class TargetLibraryInfo {" "class TargetLibraryInfo {public:"
++         INPUT_TEXT "${INPUT_TEXT}")
++endif()
+ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/include/SCEV/TargetLibraryInfo.h"
+      "${INPUT_TEXT}")
+ 
+@@ -367,12 +385,14 @@ if(ENZYME_ENABLE_PLUGINS)
+     set(bundled_includes
+         "${CMAKE_CURRENT_BINARY_DIR}/Enzyme/Clang/bundled_includes.h")
+     list(APPEND ENZYME_INCLUDES
+-         ${CMAKE_CURRENT_SOURCE_DIR}/scripts/bundle-includes.sh)
++         ${CMAKE_CURRENT_SOURCE_DIR}/scripts/bundle-includes.cmake)
+     add_custom_command(
+       OUTPUT ${bundled_includes}
+       COMMAND
+-        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/bundle-includes.sh
+-        ${CMAKE_CURRENT_SOURCE_DIR}/include/enzyme/enzyme ${bundled_includes}
++        ${CMAKE_COMMAND}
++        "-DINPUT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}/include"
++        "-DOUTPUT_FILE=${bundled_includes}"
++        -P ${CMAKE_CURRENT_SOURCE_DIR}/scripts/bundle-includes.cmake
+       DEPENDS ${ENZYME_INCLUDES}
+       COMMENT "Bundling includes"
+       VERBATIM)
+diff --git a/enzyme/Enzyme/ActivityAnalysis.h b/enzyme/Enzyme/ActivityAnalysis.h
+index b85fc70..de8cfa3 100644
+--- a/enzyme/Enzyme/ActivityAnalysis.h
++++ b/enzyme/Enzyme/ActivityAnalysis.h
+@@ -31,10 +31,14 @@
+ #include <deque>
+ 
+ #include <llvm/Config/llvm-config.h>
++#ifndef _MSC_VER
+ #define private public
++#endif
+ #include "llvm/Analysis/ScalarEvolution.h"
+ #include "llvm/Transforms/Utils/ScalarEvolutionExpander.h"
++#ifndef _MSC_VER
+ #undef private
++#endif
+ 
+ #include "llvm/Analysis/AliasAnalysis.h"
+ #include "llvm/IR/Constants.h"
+diff --git a/enzyme/Enzyme/CApi.cpp b/enzyme/Enzyme/CApi.cpp
+index 9bb3beb..318647f 100644
+--- a/enzyme/Enzyme/CApi.cpp
++++ b/enzyme/Enzyme/CApi.cpp
+@@ -24,10 +24,14 @@
+ #include "CApi.h"
+ #include "Utils.h"
+ #if LLVM_VERSION_MAJOR >= 16
++#ifndef _MSC_VER
+ #define private public
++#endif
+ #include "llvm/Analysis/ScalarEvolution.h"
+ #include "llvm/Transforms/Utils/ScalarEvolutionExpander.h"
++#ifndef _MSC_VER
+ #undef private
++#endif
+ #else
+ #include "SCEV/ScalarEvolution.h"
+ #include "SCEV/ScalarEvolutionExpander.h"
+diff --git a/enzyme/Enzyme/CacheUtility.h b/enzyme/Enzyme/CacheUtility.h
+index 281d10f..04324f7 100644
+--- a/enzyme/Enzyme/CacheUtility.h
++++ b/enzyme/Enzyme/CacheUtility.h
+@@ -29,10 +29,14 @@
+ 
+ #include <llvm/Config/llvm-config.h>
+ #if LLVM_VERSION_MAJOR >= 16
++#ifndef _MSC_VER
+ #define private public
++#endif
+ #include "llvm/Analysis/ScalarEvolution.h"
+ #include "llvm/Transforms/Utils/ScalarEvolutionExpander.h"
++#ifndef _MSC_VER
+ #undef private
++#endif
+ #else
+ #include "SCEV/ScalarEvolution.h"
+ #include "SCEV/ScalarEvolutionExpander.h"
+diff --git a/enzyme/Enzyme/Clang/EnzymeClang.cpp b/enzyme/Enzyme/Clang/EnzymeClang.cpp
+index 0bb93a4..2663654 100644
+--- a/enzyme/Enzyme/Clang/EnzymeClang.cpp
++++ b/enzyme/Enzyme/Clang/EnzymeClang.cpp
+@@ -231,6 +231,10 @@ public:
+         new llvm::vfs::OverlayFileSystem(baseFS));
+     IntrusiveRefCntPtr<llvm::vfs::InMemoryFileSystem> fs(
+         new llvm::vfs::InMemoryFileSystem());
++    // Normalize drive-relative paths before adding files on Windows. The
++    // overlay otherwise changes the working directory only after insertion.
++    if (auto cwd = baseFS->getCurrentWorkingDirectory())
++      fs->setCurrentWorkingDirectory(*cwd);
+ 
+     struct tm y2k = {};
+ 
+diff --git a/enzyme/Enzyme/Enzyme.cpp b/enzyme/Enzyme/Enzyme.cpp
+index ea180a5..f455da0 100644
+--- a/enzyme/Enzyme/Enzyme.cpp
++++ b/enzyme/Enzyme/Enzyme.cpp
+@@ -27,10 +27,14 @@
+ #include <memory>
+ 
+ #if LLVM_VERSION_MAJOR >= 16
++#ifndef _MSC_VER
+ #define private public
++#endif
+ #include "llvm/Analysis/ScalarEvolution.h"
+ #include "llvm/Transforms/Utils/ScalarEvolutionExpander.h"
++#ifndef _MSC_VER
+ #undef private
++#endif
+ #else
+ #include "SCEV/ScalarEvolution.h"
+ #include "SCEV/ScalarEvolutionExpander.h"
+@@ -3102,8 +3106,10 @@ static InlineParams getInlineParamsFromOptLevel(OptimizationLevel Level) {
+ #include "llvm/Transforms/Scalar/LowerConstantIntrinsics.h"
+ #include "llvm/Transforms/Scalar/LowerMatrixIntrinsics.h"
+ namespace llvm {
++#ifndef ENZYME_WINDOWS_LLVM_DATA_IMPORTS
+ extern cl::opt<unsigned> SetLicmMssaNoAccForPromotionCap;
+ extern cl::opt<unsigned> SetLicmMssaOptCap;
++#endif
+ #define EnableLoopFlatten false
+ #define EagerlyInvalidateAnalyses false
+ #define RunNewGVN false
+diff --git a/enzyme/Enzyme/EnzymeLogic.cpp b/enzyme/Enzyme/EnzymeLogic.cpp
+index 55af7fb..1586ec1 100644
+--- a/enzyme/Enzyme/EnzymeLogic.cpp
++++ b/enzyme/Enzyme/EnzymeLogic.cpp
+@@ -44,10 +44,14 @@
+ #include <cmath>
+ 
+ #if LLVM_VERSION_MAJOR >= 16
++#ifndef _MSC_VER
+ #define private public
++#endif
+ #include "llvm/Analysis/ScalarEvolution.h"
+ #include "llvm/Transforms/Utils/ScalarEvolutionExpander.h"
++#ifndef _MSC_VER
+ #undef private
++#endif
+ #else
+ #include "SCEV/ScalarEvolution.h"
+ #include "SCEV/ScalarEvolutionExpander.h"
+diff --git a/enzyme/Enzyme/FunctionUtils.h b/enzyme/Enzyme/FunctionUtils.h
+index 8ea34df..e10f17d 100644
+--- a/enzyme/Enzyme/FunctionUtils.h
++++ b/enzyme/Enzyme/FunctionUtils.h
+@@ -31,10 +31,14 @@
+ #include <llvm/Config/llvm-config.h>
+ 
+ #if LLVM_VERSION_MAJOR >= 16
++#ifndef _MSC_VER
+ #define private public
++#endif
+ #include "llvm/Analysis/ScalarEvolution.h"
+ #include "llvm/Transforms/Utils/ScalarEvolutionExpander.h"
++#ifndef _MSC_VER
+ #undef private
++#endif
+ #else
+ #include "SCEV/ScalarEvolution.h"
+ #include "SCEV/ScalarEvolutionExpander.h"
+diff --git a/enzyme/Enzyme/GradientUtils.h b/enzyme/Enzyme/GradientUtils.h
+index f023b8f..1a66c4c 100644
+--- a/enzyme/Enzyme/GradientUtils.h
++++ b/enzyme/Enzyme/GradientUtils.h
+@@ -35,10 +35,14 @@
+ #include <llvm/Config/llvm-config.h>
+ 
+ #if LLVM_VERSION_MAJOR >= 16
++#ifndef _MSC_VER
+ #define private public
++#endif
+ #include "llvm/Analysis/ScalarEvolution.h"
+ #include "llvm/Transforms/Utils/ScalarEvolutionExpander.h"
++#ifndef _MSC_VER
+ #undef private
++#endif
+ #else
+ #include "SCEV/ScalarEvolution.h"
+ #include "SCEV/ScalarEvolutionExpander.h"
+diff --git a/enzyme/Enzyme/InstructionBatcher.h b/enzyme/Enzyme/InstructionBatcher.h
+index 85a8447..bc14dcd 100644
+--- a/enzyme/Enzyme/InstructionBatcher.h
++++ b/enzyme/Enzyme/InstructionBatcher.h
+@@ -30,10 +30,14 @@
+ #include <llvm/Config/llvm-config.h>
+ 
+ #if LLVM_VERSION_MAJOR >= 16
++#ifndef _MSC_VER
+ #define private public
++#endif
+ #include "llvm/Analysis/ScalarEvolution.h"
+ #include "llvm/Transforms/Utils/ScalarEvolutionExpander.h"
++#ifndef _MSC_VER
+ #undef private
++#endif
+ #else
+ #include "SCEV/ScalarEvolution.h"
+ #include "SCEV/ScalarEvolutionExpander.h"
+diff --git a/enzyme/Enzyme/MustExitScalarEvolution.h b/enzyme/Enzyme/MustExitScalarEvolution.h
+index 27bba68..8750c8e 100644
+--- a/enzyme/Enzyme/MustExitScalarEvolution.h
++++ b/enzyme/Enzyme/MustExitScalarEvolution.h
+@@ -30,10 +30,14 @@
+ #include <llvm/Config/llvm-config.h>
+ 
+ #if LLVM_VERSION_MAJOR >= 16
++#ifndef _MSC_VER
+ #define private public
++#endif
+ #include "llvm/Analysis/ScalarEvolution.h"
+ #include "llvm/Transforms/Utils/ScalarEvolutionExpander.h"
++#ifndef _MSC_VER
+ #undef private
++#endif
+ #else
+ #include "SCEV/ScalarEvolution.h"
+ #include "SCEV/ScalarEvolutionExpander.h"
+diff --git a/enzyme/Enzyme/Utils.h b/enzyme/Enzyme/Utils.h
+index 5920339..de64202 100644
+--- a/enzyme/Enzyme/Utils.h
++++ b/enzyme/Enzyme/Utils.h
+@@ -1440,7 +1440,7 @@ template <typename T> static inline llvm::Function *getFunctionFromCall(T *op) {
+   const llvm::Value *callVal;
+   callVal = op->getCalledOperand();
+   while (!called) {
+-    if (auto castinst = dyn_cast<ConstantExpr>(callVal))
++    if (auto castinst = dyn_cast<llvm::ConstantExpr>(callVal))
+       if (castinst->isCast()) {
+         callVal = castinst->getOperand(0);
+         continue;
+diff --git a/enzyme/include/enzyme/utils b/enzyme/include/enzyme/utils
+index 7005d74..d0fa874 100644
+--- a/enzyme/include/enzyme/utils
++++ b/enzyme/include/enzyme/utils
+@@ -1,5 +1,6 @@
+ #pragma once
+ 
++extern "C" {
+ extern int enzyme_interleave;
+ 
+ extern int enzyme_dup;
+@@ -13,6 +14,7 @@ extern int enzyme_dup_return;
+ 
+ extern int enzyme_primal_return;
+ extern int enzyme_noret;
++} // extern "C": Enzyme identifies these marker globals by their IR names.
+ 
+ template<typename Return, typename... T>
+ Return __enzyme_autodiff(T...);
+diff --git a/enzyme/scripts/bundle-includes.cmake b/enzyme/scripts/bundle-includes.cmake
+new file mode 100644
+--- /dev/null
++++ b/enzyme/scripts/bundle-includes.cmake
+@@ -0,0 +1,23 @@
++# Bundle virtual Enzyme headers without a POSIX shell (also usable on Windows).
++if(NOT DEFINED INPUT_ROOT OR NOT DEFINED OUTPUT_FILE)
++  message(FATAL_ERROR "INPUT_ROOT and OUTPUT_FILE are required")
++endif()
++file(GLOB_RECURSE headers LIST_DIRECTORIES false RELATIVE "${INPUT_ROOT}"
++     "${INPUT_ROOT}/*")
++list(SORT headers)
++set(bundled "const char* include_headers[][2] = {\n")
++foreach(header IN LISTS headers)
++  file(READ "${INPUT_ROOT}/${header}" contents)
++  string(FIND "${contents}" ")ENZYME_HDR\"" delimiter_position)
++  if(NOT delimiter_position EQUAL -1)
++    message(FATAL_ERROR "Raw string delimiter occurs in ${header}")
++  endif()
++  string(APPEND bundled "{\"/enzymeroot/${header}\", R\"ENZYME_HDR(${contents})ENZYME_HDR\"},\n")
++endforeach()
++string(APPEND bundled "};\n")
++get_filename_component(output_directory "${OUTPUT_FILE}" DIRECTORY)
++file(MAKE_DIRECTORY "${output_directory}")
++file(WRITE "${OUTPUT_FILE}.tmp" "${bundled}")
++execute_process(COMMAND "${CMAKE_COMMAND}" -E copy_if_different
++                "${OUTPUT_FILE}.tmp" "${OUTPUT_FILE}"
++                COMMAND_ERROR_IS_FATAL ANY)

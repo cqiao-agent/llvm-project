@@ -1,0 +1,22 @@
+{
+  "cpp_O0": {
+    "checks": 8,
+    "failures": 0,
+    "virtual_headers": true,
+    "frontend_macros": true
+  },
+  "cpp_O2": {
+    "checks": 8,
+    "failures": 0,
+    "virtual_headers": true,
+    "frontend_macros": true
+  },
+  "gameplay": {
+    "checks": 61,
+    "failures": 0,
+    "max_scaled_error": 1.1661378639E-08,
+    "loss_before": 2675.19389305,
+    "loss_after": 2167.47158993
+  },
+  "ir_has_no_remaining_autodiff_calls": true
+}

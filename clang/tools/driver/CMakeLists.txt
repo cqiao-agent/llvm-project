@@ -59,6 +59,16 @@ if(CLANG_PLUGIN_SUPPORT)
   export_executable_symbols_for_plugins(clang)
 endif()
 
+# Enzyme also shares LLVM analysis keys and other data with its host on Windows.
+if(WIN32 AND CLANG_ENZYME_EXTRA_EXPORTS)
+  file(STRINGS "${CLANG_ENZYME_EXTRA_EXPORTS}" enzyme_exports)
+  foreach(symbol IN LISTS enzyme_exports)
+    target_link_options(clang PRIVATE "/EXPORT:${symbol}")
+  endforeach()
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+               "${CLANG_ENZYME_EXTRA_EXPORTS}")
+endif()
+
 add_dependencies(clang clang-resource-headers)
 
 if(NOT CLANG_LINKS_TO_CREATE)
